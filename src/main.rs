@@ -1,58 +1,58 @@
-use std::io::{self, Write};
-
+use std::{
+    io::{self, Write},
+};
 fn main() {
-    println!("mini-sqlite v0.1");
+    let stdout = io::stdout();
+    let mut handle = stdout.lock();
+    println!("rqlite v1");
 
     loop {
-        print!("db > ");
-        io::stdout().flush().unwrap();
+        write!(handle, "db > ").unwrap();
+        handle.flush().unwrap();
 
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
+        let mut buffer = String::new();
+        io::stdin().read_line(&mut buffer).unwrap();
 
-        if input.trim() == ".exit" {
-            break;
+        if buffer.trim().eq(".exit") {
+            return;
         }
 
-        execute_sql(&input);
+        exec_sql(&buffer);
     }
 }
 
-fn execute_sql(sql: &str) {
-    // println!("{}", sql.to_string());
-    let ast = parse(sql);
-    println!("{:?}", ast);
-    // let bytecode = plan(ast);
-    // run(bytecode);
+fn exec_sql(sql: &str) {
+    let tokens = tokenize(sql);
+    let ast = parse(tokens);
+    println!("{:#?}", ast);
 }
 
-pub fn parse(sql: &str) -> Result<Statement, String> {
-    let tokens = tokenize(sql);
+fn parse(tokens: Vec<String>) -> Result<Statement, String> {
     if tokens.is_empty() {
         return Err("Empty SQL query".to_string());
     }
 
-    let mut i = 0;
-    if tokens[0].eq_ignore_ascii_case("SELECT") {
+    let mut i: usize = 0;
+
+    if tokens[0].eq_ignore_ascii_case("select") {
         i += 1;
-        let (columns, new_i) = parse_select_list(&tokens, i)?;
+        let (columns, new_i) = parse_select_list(&tokens, i).unwrap();
         i = new_i;
 
-        if i >= tokens.len() || !tokens[i].eq_ignore_ascii_case("FROM") {
+        if i >= tokens.len() || !tokens[i].eq_ignore_ascii_case("from") {
             return Err("Expected FROM".to_string());
         }
 
         i += 1;
-
         if i >= tokens.len() {
             return Err("Expected table name".to_string());
         }
         let table = tokens[i].clone();
         i += 1;
 
-        let where_clause = if i < tokens.len() && tokens[i].eq_ignore_ascii_case("WHERE") {
+        let where_clause = if i < tokens.len() && tokens[i].eq_ignore_ascii_case("where") {
             i += 1;
-            let (expr, new_i) = parse_where_expr(&tokens, i)?;
+            let (expr, new_i) = parse_where_expr(&tokens, i).unwrap();
             i = new_i;
             Some(expr)
         } else {
@@ -69,35 +69,8 @@ pub fn parse(sql: &str) -> Result<Statement, String> {
             where_clause,
         }))
     } else {
-        Err("Unkonown command".to_string())
+        return Err("Invalid SQL query".to_string());
     }
-}
-
-fn parse_select_list(tokens: &[String], mut i: usize) -> Result<(Vec<ColumnRef>, usize), String> {
-    let mut columns = Vec::new();
-
-    loop {
-        if i >= tokens.len() {
-            return Err("Expected column or *".to_string());
-        }
-
-        if tokens[i] == "*" {
-            columns.push(ColumnRef::Star);
-            i += 1;
-            break;
-        } else {
-            columns.push(ColumnRef::Name(tokens[i].clone()));
-            i += 1;
-        }
-
-        if i < tokens.len() && tokens[i] == "," {
-            i += 1;
-        } else {
-            break;
-        }
-    }
-
-    Ok((columns, i))
 }
 
 fn parse_where_expr(tokens: &[String], mut i: usize) -> Result<(Expr, usize), String> {
@@ -116,10 +89,10 @@ fn parse_where_expr(tokens: &[String], mut i: usize) -> Result<(Expr, usize), St
         "=" => BinaryOp::Eq,
         ">" => BinaryOp::Gt,
         "<" => BinaryOp::Lt,
-        _ => return Err(format!("Unknown operator: {}", tokens[i])),
+        _ => return Err(format!("Unknown opearator: {}", tokens[i])),
     };
-    i += 1;
 
+    i += 1;
     if i >= tokens.len() {
         return Err("Expected value".to_string());
     }
@@ -133,7 +106,34 @@ fn parse_where_expr(tokens: &[String], mut i: usize) -> Result<(Expr, usize), St
     Ok((Expr::Binary(op, Box::new(left), Box::new(right)), i + 1))
 }
 
-pub fn tokenize(sql: &str) -> Vec<String> {
+fn parse_select_list(tokens: &[String], mut i: usize) -> Result<(Vec<ColumnRef>, usize), String> {
+    let mut columns = Vec::new();
+
+    loop {
+        if i >= tokens.len() {
+            return Err("Expected column or *".to_string());
+        }
+
+        if tokens[i] == "*" {
+            columns.push(ColumnRef::Star);
+            i += 1;
+            break;
+        } else {
+            columns.push(ColumnRef::Name(tokens[i].to_string()));
+            i += 1
+        }
+
+        if i < tokens.len() && tokens[i] == "," {
+            i += 1
+        } else {
+            break;
+        }
+    }
+
+    Ok((columns, i))
+}
+
+fn tokenize(sql: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut buf = String::new();
 
@@ -148,6 +148,7 @@ pub fn tokenize(sql: &str) -> Vec<String> {
                 tokens.push(buf.clone());
                 buf.clear();
             }
+
             tokens.push(c.to_string());
         } else {
             buf.push(c);
@@ -161,43 +162,41 @@ pub fn tokenize(sql: &str) -> Vec<String> {
     tokens
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum Statement {
     Select(Select),
-    // Insert(Insert),
-    // CreateTable(CreateTable),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct Select {
     pub columns: Vec<ColumnRef>,
     pub table: String,
     pub where_clause: Option<Expr>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum ColumnRef {
     Star,
     Name(String),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum Expr {
     Column(String),
     Literal(Value),
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum BinaryOp {
-    Eq,
     Gt,
     Lt,
+    Eq,
     And,
     Or,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum Value {
     Integer(i64),
     Text(String),
