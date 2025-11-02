@@ -1,6 +1,8 @@
 [package]
 name = "rqlite"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+description = "SQLite in Rust from scratch"
+license = "MIT"
 
 [dependencies]
