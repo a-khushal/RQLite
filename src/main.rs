@@ -1,8 +1,11 @@
 mod ast;
 mod parser;
+mod planner;
 
 use parser::{parse, tokenize};
 use std::io::{self, Write};
+
+use crate::planner::plan;
 
 fn main() {
     let stdout = io::stdout();
@@ -28,7 +31,11 @@ fn main() {
 fn exec_sql(sql: &str) {
     let tokens = tokenize(sql);
     match parse(&tokens) {
-        Ok(ast) => println!("{:#?}", ast),
+        Ok(ast) => {
+            println!("{:#?}", ast);
+            println!("{:#?}", plan(&ast));
+        }
         Err(e) => println!("Parse error: {}", e),
     }
+
 }
